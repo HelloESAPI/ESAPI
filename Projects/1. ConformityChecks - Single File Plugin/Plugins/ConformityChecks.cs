@@ -7,6 +7,8 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using VMS.TPS.Common.Model.API;
 using VMS.TPS.Common.Model.Types;
+using System.Windows.Controls;
+using System.Windows.Input;
 
 [assembly: AssemblyVersion("1.0.0.1")]
 
@@ -22,9 +24,25 @@ namespace VMS.TPS
     {
     }
 
+    // initialize private variables for use throughout class
+    private Patient _patient;
+    private PlanSetup _plan;
+    private StructureSet _structureSet;
+    private Structure _selectedTargetStructure;
+    private Structure _selectedStructureOfInterest; // similar to volume of interest (voi) or region of interest (roi)
+    private double _r50;
+    private double _r100;
+    private List<string> _ptvIds;
+    private List<string> _structureOfInterestIds;
+    private ComboBox _ptvsComboBox;
+    private ComboBox _structuresOfInterestComboBox;
+    private ComboBox _calculationTypeOptionsComboBox;
+    private List<string> _options;
+    private Button _calculateConformityStatisticsButton;
+    private TextBlock _resultsTextBlock;
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    public void Execute(ScriptContext context /*, System.Windows.Window window, ScriptEnvironment environment*/)
+    public void Execute(ScriptContext context , System.Windows.Window window/*, ScriptEnvironment environment*/)
     {
       // validate patient in current context
       ValidatePatient(context);
@@ -35,73 +53,160 @@ namespace VMS.TPS
       try
       {
 
-        // do stuff here...
 
-        #region Longest Example using Method Extraction - possible example of Abstraction
+        // patient in the current context
+        _patient = GetPatient(context);
 
-        //// patient in the current context
-        //Patient patient = GetPatient(context);
+        // current plan setup
+        _plan = GetPlanSetup(context);
 
-        //// current plan setup
-        //PlanSetup plan = GetPlanSetup(context);
+        // current plan's structure set
+        _structureSet = GetStructureSet(_plan);
 
-        //// current plan's structure set
-        //StructureSet structureSet = GetStructureSet(plan);
+        // get the list of ptv ids
+        _ptvIds = GetPTVIds(_structureSet);
 
-        //// the plan target volume
-        //Structure target = GetPlanTargetVolume(plan.TargetVolumeID, structureSet);
+        // make sure there's at least one
+        ValidatePTVList(_ptvIds);
 
-        //// verify the target is not null
-        //ValidateStructureExists(target, "Please select a target volume");
+        // get the body and other possible structures of interest
+        _structureOfInterestIds = GetStructureOfInterestIds(_structureSet);
 
-        //// get the body structure
-        //Structure body = GetBodyStructure(structureSet);
+        // make sure there's at least one structure of interest (there should always be a body/external when there's dose)
+        ValidateStructureOfInterestList(_structureOfInterestIds);
 
-        //// calculate the R50 - 50% IDL / target volume
-        //double r50 = CalculateR50(plan, body, target);
 
-        //// calculate the R100 - 100% IDL / target volume
-        //double r100 = CalculateR100(plan, body, target);
+        #region Window Components
 
-        //// display stats to user
-        //DisplayConformityStatistics(patient, plan, r50, r100);
+        // combo box for ptvs
+        _ptvsComboBox = new ComboBox
+        {
+          // set the items source as structures that start with ptv
+          ItemsSource = _ptvIds,
+          // set the selected item as the plan target volume id OR the first target in the list
+          SelectedItem = string.IsNullOrEmpty(_plan.TargetVolumeID) ? _ptvIds.First() : _plan.TargetVolumeID,
+          Width = 125
+        };
+
+        // combo box for structures of interest
+        _structuresOfInterestComboBox = new ComboBox
+        {
+          // set the items source as structures with r50_, ci_, and the body
+          ItemsSource = _structureOfInterestIds,
+          // set the selected structure of interest to the body structure
+          SelectedItem = _structureSet.Structures.First(x => x.DicomType == "EXTERNAL").Id,
+          Width = 125
+        };
+
+        // options for calculation
+        _options = new List<string>
+        {
+          "Both",
+          "CI",
+          "R50"
+        };
+
+        // combo box for calculation selection
+        _calculationTypeOptionsComboBox = new ComboBox
+        {
+          // set items source as options
+          ItemsSource = _options,
+          // selected item as Both
+          SelectedItem = _options.First(),
+          Width = 125
+        };
+
+        // button to calculate conformity stats
+        _calculateConformityStatisticsButton = new Button
+        {
+          // button content - what it says in the button
+          Content = "Calculate Conformity Statistics",
+          // a little padding
+          Padding = new Thickness(10),
+          Cursor = Cursors.Hand,
+          HorizontalAlignment = HorizontalAlignment.Center,
+          Width = 260,
+          Margin = new Thickness(0, 10, 0, 0)
+        };
+        _calculateConformityStatisticsButton.Click += CalculateConformityStatisticsButton_Click;
+
+
+        // textblock to show the results
+        _resultsTextBlock = new TextBlock
+        {
+          Text = "",
+          HorizontalAlignment = HorizontalAlignment.Center,
+          Margin = new Thickness(0, 10, 0, 0)
+        };
+
+
+        #region Window Containers
+
+        // main container
+        StackPanel spMain = new StackPanel
+        {
+          Orientation = Orientation.Vertical,
+          Margin = new Thickness(0, 10, 0, 0),
+          HorizontalAlignment = HorizontalAlignment.Center
+        };
+
+        // ptv selection container and label
+        StackPanel spPtvs = new StackPanel()
+        {
+          Orientation = Orientation.Horizontal,
+          Margin = new Thickness(0, 10, 0, 0)
+        };
+        spPtvs.Children.Add(new TextBlock { Text = "Choose Target", Width = 125, Margin = new Thickness(0,0,10,0)});
+        spPtvs.Children.Add(_ptvsComboBox);
+
+
+        // structure of interest selection container and label
+        StackPanel spStructuresOfInterest = new StackPanel()
+        {
+          Orientation = Orientation.Horizontal,
+          Margin = new Thickness(0, 10, 0, 0)
+        };
+        spStructuresOfInterest.Children.Add(new TextBlock { 
+          Text = "Choose SOI", 
+          ToolTip = "Your structure of interest which contains all of the relevant isodose levels, i.e., 50% and 100%", 
+          Width = 125, 
+          Margin = new Thickness(0, 0, 10, 0) });
+        spStructuresOfInterest.Children.Add(_structuresOfInterestComboBox);
+
+        // structure of interest selection container and label
+        StackPanel spCalculationOptions = new StackPanel()
+        {
+          Orientation = Orientation.Horizontal,
+          Margin = new Thickness(0, 10, 0, 0)
+        };
+        spCalculationOptions.Children.Add(new TextBlock
+        {
+          Text = "Calculate",
+          Width = 125,
+          Margin = new Thickness(0, 0, 10, 0)
+        });
+        spCalculationOptions.Children.Add(_calculationTypeOptionsComboBox);
+
+
+        // add components to the main stack panel
+        spMain.Children.Add(spPtvs);
+        spMain.Children.Add(spStructuresOfInterest);
+        spMain.Children.Add(spCalculationOptions);
+        spMain.Children.Add(_calculateConformityStatisticsButton);
+        spMain.Children.Add(_resultsTextBlock);
+
+
+        #endregion containers
+
 
         #endregion
 
 
-
-        #region Shorter Example using method extraction -- less broken down -- slightly more redundant / slower
-
-        //// if the plan has a target volume selected...
-        //if (string.IsNullOrEmpty(context.PlanSetup.TargetVolumeID) == false)
-        //{
-        //  // calculate and display stats to user
-        //  DisplayConformityStatistics(
-        //    context.Patient,
-        //    context.PlanSetup,
-        //    CalculateR50(context.PlanSetup,
-        //                  context.StructureSet.Structures.FirstOrDefault(x => x.DicomType == "EXTERNAL"),
-        //                  context.StructureSet.Structures.FirstOrDefault(x => x.Id == context.PlanSetup.TargetVolumeID)),
-        //    CalculateR100(context.PlanSetup,
-        //                  context.StructureSet.Structures.FirstOrDefault(x => x.DicomType == "EXTERNAL"),
-        //                  context.StructureSet.Structures.FirstOrDefault(x => x.Id == context.PlanSetup.TargetVolumeID))
-        //    );
-        //}
-        //else
-        //{
-        //  MessageBox.Show("Please select a plan target volume");
-        //}
-
-        #endregion
-
-
-
-        #region Shortest example - abstracts the longer example into a single method
-
-        CalculateAndDisplayConformityStatistics(context);
-
-        #endregion
-
+        // window settings
+        window.FontFamily = new System.Windows.Media.FontFamily("Calibri");
+        window.FontSize = 14;
+        window.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        window.Content = spMain;
 
       }
       catch (Exception ex)
@@ -114,6 +219,101 @@ namespace VMS.TPS
 
 
     }
+
+
+
+
+    /// <summary>
+    /// Gets a list of structures that begin with CI_ or R50_ or are of DicomType EXTERNAL
+    /// </summary>
+    /// <param name="structureSet"></param>
+    /// <returns></returns>
+    private List<string> GetStructureOfInterestIds(StructureSet structureSet)
+    {
+      return structureSet.Structures.Where(x =>
+          x.Id.ToUpper().StartsWith("R50_") ||
+          x.Id.ToUpper().StartsWith("CI_") ||
+          x.DicomType == "EXTERNAL").Select(x => x.Id).ToList();
+    }
+
+    /// <summary>
+    /// Gets a list of structures that begin with PTV (Case insensitive)
+    /// </summary>
+    /// <param name="structureSet"></param>
+    /// <returns></returns>
+    private List<string> GetPTVIds(StructureSet structureSet)
+    {
+      return structureSet.Structures.Where(x => x.Id.ToUpper().StartsWith("PTV")).Select(x => x.Id).ToList();
+    }
+    /// <summary>
+    /// Validates whether the list of PTVs contains at least 1 PTV
+    /// <para>Will end the script if the list is empty</para>
+    /// </summary>
+    private void ValidatePTVList(List<string> ptvIds)
+    {
+      if (ptvIds.Count == 0)
+      {
+        MessageBox.Show("Sorry, it appears you don't have any structures that begin with PTV");
+        return;
+      }
+    }
+    /// <summary>
+    /// Validates whether there is a structure of DicomType EXTERNAL and/or other possible structures of interest
+    /// <para>Will end the script if the list is empty</para>
+    /// </summary>
+    private void ValidateStructureOfInterestList(List<string> structureOfInterestIds)
+    {
+      if (structureOfInterestIds.Count == 0)
+      {
+        MessageBox.Show("Sorry, it appears you don't have a Body (or External) or structures that begin with CI_... or R50_...");
+        return;
+      }
+    }
+
+
+    /// <summary>
+    /// Initiates the calculation of the conformity statistics and populates the results in the window
+    /// </summary>
+    /// <param name="sender"></param>
+    /// <param name="e"></param>
+    private void CalculateConformityStatisticsButton_Click(object sender, RoutedEventArgs e)
+    {
+
+      _selectedStructureOfInterest = GetStructure(_structuresOfInterestComboBox.SelectedItem.ToString(), _structureSet);
+      _selectedTargetStructure = GetStructure(_ptvsComboBox.SelectedItem.ToString(), _structureSet);
+
+      if (_calculationTypeOptionsComboBox.SelectedItem.ToString() == "Both")
+      {
+        // calculate the R50 - 50% IDL / target volume
+        _r50 = Math.Round(CalculateR50(_plan, _selectedStructureOfInterest, _selectedTargetStructure), 2);
+
+        //// calculate the R100 - 100% IDL / target volume
+        _r100 = Math.Round(CalculateR100(_plan, _selectedStructureOfInterest, _selectedTargetStructure), 2);
+
+
+        // append the results
+        _resultsTextBlock.Text += string.Format("{0}:\n\tR50:\t{1}\n\tCI:\t{2}\n", _selectedTargetStructure.Id, _r50, _r100);
+      }
+      else if (_calculationTypeOptionsComboBox.SelectedItem.ToString() == "CI")
+      {
+        // calculate the R100 - 100% IDL / target volume
+        _r100 = Math.Round(CalculateR100(_plan, _selectedStructureOfInterest, _selectedTargetStructure), 2);
+
+        // append the results
+        _resultsTextBlock.Text += string.Format("{0}:\n\tCI:\t{1}\n", _selectedTargetStructure.Id, _r100);
+      }
+      else
+      {
+        // calculate the R50 - 50% IDL / target volume
+        _r50 = Math.Round(CalculateR50(_plan, _selectedStructureOfInterest, _selectedTargetStructure), 2);
+
+        // append the results
+        _resultsTextBlock.Text += string.Format("{0}:\n\tR50:\t{1}\n", _selectedTargetStructure.Id, _r50);
+      }
+
+
+    }
+
 
     /// <summary>
     /// Calculates and displays the R100 and R50 to the user
@@ -170,6 +370,28 @@ namespace VMS.TPS
                       plan.Dose.DoseMax3D.ToString(),
                       r100,
                       r50));
+    }
+
+    /// <summary>
+    /// Gets the conformity statistics result string 
+    /// </summary>
+    /// <param name="patient"></param>
+    /// <param name="plan"></param>
+    /// <param name="r50"></param>
+    /// <param name="r100"></param>
+    /// <returns></returns>
+    private static string GetConformityStatisticsResultString(Patient patient, PlanSetup plan, double r50, double r100)
+    {
+      return string.Format("Patient Id:\t\t{0}\n\n" +
+                      "Plan Id:\t\t{1}\n\n" +
+                      "Max Dose:\t\t{2}\n\n" +
+                      "R100 (CI):\t\t{3:F1}\n\n" +
+                      "R50 (Gradient):\t{4:F2}",
+                      patient.Id,
+                      plan.Id,
+                      plan.Dose.DoseMax3D.ToString(),
+                      r100,
+                      r50);
     }
 
     /// <summary>
@@ -230,6 +452,17 @@ namespace VMS.TPS
     }
 
     /// <summary>
+    /// Gets the structure from the structure with the matching id
+    /// </summary>
+    /// <param name="structureId"></param>
+    /// <param name="structureSet"></param>
+    /// <returns>Structure with the matching Id</returns>
+    private static Structure GetStructure(string structureId, StructureSet structureSet)
+    {
+      return structureSet.Structures.FirstOrDefault(x => x.Id == structureId);
+    }
+
+    /// <summary>
     /// Gets the plan's structure set
     /// </summary>
     /// <param name="planSetup"></param>
@@ -265,6 +498,7 @@ namespace VMS.TPS
         return;
       }
     }
+
     /// <summary>
     /// Validates that the current context has a plansetup and that plan has valid dose
     /// <para>Will alert the user and end the script</para>
@@ -279,6 +513,7 @@ namespace VMS.TPS
         return;
       }
     }
+
     /// <summary>
     /// Validates that the current context has a structure set
     /// <para>Will alert the user and end the script</para>
