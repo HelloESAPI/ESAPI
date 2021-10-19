@@ -42,17 +42,15 @@
     <Reference Include="System.Xaml">
       <RequiredTargetFramework>4.0</RequiredTargetFramework>
     </Reference>
+    <Reference Include="VMS.TPS.Common.Model.API">
+      <HintPath>..\..\..\..\..\..\..\..\..\Varian\RTM\15.6\esapi\API\VMS.TPS.Common.Model.API.dll</HintPath>
+    </Reference>
+    <Reference Include="VMS.TPS.Common.Model.Types">
+      <HintPath>..\..\..\..\..\..\..\..\..\Varian\RTM\15.6\esapi\API\VMS.TPS.Common.Model.Types.dll</HintPath>
+    </Reference>
     <Reference Include="WindowsBase" />
     <Reference Include="PresentationCore" />
     <Reference Include="PresentationFramework" />
-    <Reference Include="VMS.TPS.Common.Model.API">
-      <HintPath>C:\Users\mtpar\OneDrive\Desktop\__dev\eclipse stuff\esapi\Varian\RTM\15.6\esapi\API\VMS.TPS.Common.Model.API.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
-    <Reference Include="VMS.TPS.Common.Model.Types">
-      <HintPath>C:\Users\mtpar\OneDrive\Desktop\__dev\eclipse stuff\esapi\Varian\RTM\15.6\esapi\API\VMS.TPS.Common.Model.Types.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="..\..\plugins\ConformityChecks.cs" />
